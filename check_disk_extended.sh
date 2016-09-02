@@ -1,8 +1,8 @@
 #!/bin/sh
 #
 # 20160901 mve total rewrite so that it's much faster and more accurate. No longer using awk
+# 20160902 mve bugfixes and support for multiple disks in a system.
 
-persistentStatsFile="/tmp/nagios_check_disk_extended2.stats"
 
 function help {
 echo -e "
@@ -44,6 +44,8 @@ while getopts "d:w:c:h" OPT; do
                 "h") help;;
         esac
 done
+
+persistentStatsFile="/tmp/nagios_check_disk_extended2.stat.${disk}"
 
 # Adjusting the three warn and crit levels:
 crit_tps=`echo $critical | cut -d, -f1`
@@ -89,6 +91,7 @@ else
   kbread_prev=0
   kbwritten_prev=0
   weightedIOtime_prev=0
+  firstrun=1
 fi
 
 # debug
@@ -104,13 +107,17 @@ kbread_cur=$(( $c3 * ${sector_size} ))
 kbwritten_cur=$(( $c7 * ${sector_size} ))
 weightedIOtime_cur=$c10
 
-# store current data for the next run
-echo "${time_now}:${tps_cur}:${kbread_cur}:${kbwritten_cur}:${weightedIOtime_cur}" > ${persistentStatsFile};
-
+# debug
+#echo "kbread_prev: ${kbread_prev} kbread_cur: ${kbread_cur} (c3: ${c3} sect_size: ${sector_size})time_prev: ${time_prev} time_now: ${time_now}"
 
 # calculate the delta's based on current and previous values:
 deltatime=$(( $time_now - $time_prev ))
-#tps=$(( ( $tps_cur - $tps_prev ) / $deltatime ))
+# If the check is called within a second, currently can't handle that. exit.
+if [ ${deltatime} -eq 0 ]; then exit 1;fi
+
+# store current data for the next run only if we're atleast a second apart
+echo "${time_now}:${tps_cur}:${kbread_cur}:${kbwritten_cur}:${weightedIOtime_cur}" > ${persistentStatsFile};
+
 dividend=$(( $tps_cur - $tps_prev ))
 tps=$(div $dividend  $deltatime)
 dividend=$(( ${kbread_cur} - ${kbread_prev} ))
@@ -147,7 +154,7 @@ if [[ $firstrun -eq 1 ]]; then
   echo "$msg - I/O stats tps=0 KB_read/s=0 KB_written/s=0 %io-utilisation=0 | 'tps'=0; 'KB_read/s'=0; 'KB_written/s'=0; 'io-utilisation'=0;"
 else
   # use printf so we can format the floating point numbers.
-  printf "$msg - I/O stats tps=%.1f KB_read/s=%.1f KB_written/s=%.1f %%io-utilisation=%.1f | 'tps'=%.1f; 'KB_read/s'=%.1f; 'KB_written/s'=%.1f; 'io-utilisation'=%.1f;" $tps $kbread $kbwritten $utilpct $tps $kbread $kbwritten $utilpct
+  printf "$msg - I/O stats tps=%.1f KB_read/s=%.1f KB_written/s=%.1f %%io-utilisation=%.1f | 'tps'=%.1f; 'KB_read/s'=%.1f; 'KB_written/s'=%.1f; 'io-utilisation'=%.1f;\n" $tps $kbread $kbwritten $utilpct $tps $kbread $kbwritten $utilpct
 fi
 # Bye!
 exit $status
