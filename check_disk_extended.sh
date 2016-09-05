@@ -1,7 +1,9 @@
 #!/bin/sh
 #
+# This is a plugin for nagios/opsview/omd to measure disk throughput related statistics.
 # 20160901 mve total rewrite so that it's much faster and more accurate. No longer using awk
 # 20160902 mve bugfixes and support for multiple disks in a system.
+# 20160905 mve prevent check from returning negative numbers when counters wrap or upon reboot.
 
 
 function help {
@@ -118,6 +120,7 @@ if [ ${deltatime} -eq 0 ]; then exit 1;fi
 # store current data for the next run only if we're atleast a second apart
 echo "${time_now}:${tps_cur}:${kbread_cur}:${kbwritten_cur}:${weightedIOtime_cur}" > ${persistentStatsFile};
 
+# Calculate the metrics to return to 'nagios' (difference between now and previous run)
 dividend=$(( $tps_cur - $tps_prev ))
 tps=$(div $dividend  $deltatime)
 dividend=$(( ${kbread_cur} - ${kbread_prev} ))
@@ -137,6 +140,13 @@ utilpct=$(div $dividend $devider)
 atps="$(echo $tps | sed 's/\([0-9]\+\)\..*/\1/')"
 akbread="$(echo $kbread | sed 's/\([0-9]\+\)\..*/\1/')"
 akbwritten="$(echo $kbwritten | sed 's/\([0-9]\+\)\..*/\1/')"
+autilpct="$(echo ${utilpct} | sed 's/\([0-9]\+\)\..*/\1/')"
+
+# Prevent negative numbers
+[ ${atps} -lt 0 ] && tps=0
+[ ${akbread} -lt 0 ] && kbread=0
+[ ${akbwritten} -lt 0 ] && kbwritten=0
+[ ${autilpct} -lt 0 ] && utilpct=0
 
 if ( [ $atps -ge $crit_tps ] || [ $akbread -ge $crit_read ] || [ $akbwritten -ge $crit_written ] ); then
         msg="CRITICAL"
